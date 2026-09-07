@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="HANKO — a tiny atelier that presses any link into a hand-styled QR stamp. No servers, no accounts — everything runs in your browser.">
+<meta name="theme-color" content="#F4EFE6">
+<title>HANKO — Ink your link</title>
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="HANKO — Ink your link.">
+<meta property="og:description" content="A tiny atelier that presses any link into a hand-styled QR stamp. Vector-perfect, no servers, runs entirely in your browser.">
+<meta property="og:image" content="https://l55slr.github.io/Hanko/og-image.png">
+<meta property="og:url" content="https://l55slr.github.io/Hanko/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23E2472C'/%3E%3Ctext x='32' y='45' font-size='34' font-family='serif' font-weight='700' text-anchor='middle' fill='%23F4EFE6'%3E%E5%8D%B0%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Space+Mono:wght@400;700&family=Zen+Old+Mincho:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="seal-mini" aria-hidden="true">印</span>
+    <span class="brand-name">HANKO</span>
+    <a class="brand-sub" href="https://x.com/SalarikDev" target="_blank" rel="noopener" aria-label="@SalarikDev on X">
+      <svg class="x-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
+    </a>
+  </div>
+  <div class="top-meta">
+    <span>EST. 1994 — DENSO WAVE, JPN</span>
+    <span>TOKYO <span id="clock">--:--:--</span> JST</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <section class="hero">
+    <p class="overline"><span class="sq"></span>N°001 · INK YOUR LINK · FREE FOREVER</p>
+    <h1 class="display">Ink your <em>link.</em></h1>
+    <p class="lede">A tiny atelier that presses any URL or piece of text into a hand-styled QR stamp — drawn as pure vector in your browser, dressed like a seal, and safe to scan anywhere.</p>
+  </section>
+
+  <section class="poster" id="poster">
+    <span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+    <div class="sun" aria-hidden="true"></div>
+    <div class="ring" aria-hidden="true"></div>
+    <div class="ring2" aria-hidden="true"></div>
+    <span class="kanji" aria-hidden="true">印</span>
+    <span class="vert" aria-hidden="true"><span>点と線から、印を。</span><span class="v2">クイックレスポンス · 1994</span></span>
+
+    <div class="annot annot-tl">FIG. 01 — THE STAMP<br><span id="today">—</span></div>
+
+    <div class="stage">
+      <div class="tilt" id="tilt">
+        <figure class="stamp-card" id="card" tabindex="0" role="button" aria-label="QR stamp — click to re-press">
+          <figcaption class="card-head">
+            <span>QUICK RESPONSE · SVG</span>
+            <span id="pressNo">PRESS N°001</span>
+          </figcaption>
+          <div class="card-frame" id="frame">
+            <svg id="qr" viewBox="0 0 37 37" role="img" aria-label="QR code preview"></svg>
+            <div class="empty-state" id="emptyState">AWAITING CONTENT</div>
+          </div>
+        </figure>
+      </div>
+    </div>
+
+    <div class="annot annot-bl" id="specs">VER — · — MODULES<br>EC LEVEL H · 30% RECOVERY<br>STATUS&ensp;<span class="dot"></span>READY</div>
+    <div class="annot annot-br">CLICK THE STAMP<br>TO RE-PRESS ↻</div>
+  </section>
+
+  <section class="controls">
+    <div class="rows">
+      <div class="row">
+        <label class="row-label" for="content">01 / CONTENT</label>
+        <div>
+          <input id="content" type="text" spellcheck="false" autocomplete="off" maxlength="300" placeholder="https://your-link.com">
+          <span class="counter" id="counter">0 / 300</span>
+        </div>
+      </div>
+      <div class="row">
+        <label class="row-label" for="mark">02 / SEAL MARK</label>
+        <div class="row-flex">
+          <input id="mark" type="text" spellcheck="false" autocomplete="off" maxlength="3" placeholder="AB" aria-label="Center initials">
+          <span class="hint">OPTIONAL — INITIALS PRESSED AT THE CENTRE</span>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-label" id="lblGlyph">03 / GLYPH</span>
+        <div class="seg" id="segGlyph" role="group" aria-labelledby="lblGlyph">
+          <button type="button" data-v="fluid" class="on">FLUID</button>
+          <button type="button" data-v="dot">DOT</button>
+          <button type="button" data-v="square">SQUARE</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-label" id="lblEye">04 / EYES</span>
+        <div class="seg" id="segEye" role="group" aria-labelledby="lblEye">
+          <button type="button" data-v="sharp">SHARP</button>
+          <button type="button" data-v="round" class="on">ROUND</button>
+          <button type="button" data-v="circle">CIRCLE</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-label" id="lblInk">05 / INK</span>
+        <div class="swatches" id="inks" role="group" aria-labelledby="lblInk"></div>
+      </div>
+      <div class="row">
+        <span class="row-label" id="lblPaper">06 / PAPER</span>
+        <div class="swatches" id="papers" role="group" aria-labelledby="lblPaper"></div>
+      </div>
+      <div class="row">
+        <span class="row-label">07 / PRESS</span>
+        <div class="actions">
+          <button type="button" class="btn primary" id="dlPng">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
+            STAMP · PNG
+          </button>
+          <button type="button" class="btn ghost" id="dlSvg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"><path d="M12 4v11m0 0l-5-5m5 5l5-5M5 20h14"/></svg>
+            STAMP · SVG
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="foot-note">NO SERVERS · NO ACCOUNTS · PRESSED &amp; SAVED ENTIRELY IN YOUR BROWSER</p>
+  </section>
+
+</main>
+
+<footer class="marquee" aria-hidden="true">
+  <div class="track" id="track"></div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- QR engine. For full offline use: download qrcode.min.js from
+     https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js
+     into /vendor/ and swap the line below for <script src="vendor/qrcode.min.js"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
