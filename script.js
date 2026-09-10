@@ -1,10 +1,34 @@
 (function(){
   'use strict';
+
   const $ = s => document.querySelector(s);
   const VERM = '#E2472C';
+  const pad3 = n => String(n).padStart(3, '0');
+  const KEY = 'hanko.state.v2';
+
+  const TYPES = ['link', 'wifi', 'email'];
+
+  /* ================= dynamic field templates ================= */
+  const FIELD_DEFS = {
+    link: { label:'CONTENT', html:
+      `<input id="content" class="f-in" data-k="link" type="text" spellcheck="false" autocomplete="off" maxlength="300" placeholder="https://your-link.com" aria-label="Link or text">` +
+      `<span class="counter" id="counter">0 / 300</span>` },
+    wifi: { label:'NETWORK', html:
+      `<input class="f-in" data-k="ssid" type="text" spellcheck="false" autocomplete="off" maxlength="32" placeholder="NETWORK NAME (SSID)" aria-label="Network name">` +
+      `<span class="counter" id="counter"></span>` +
+      `<div class="f-line">` +
+        `<input class="f-in grow" data-k="pass" type="text" spellcheck="false" autocomplete="off" maxlength="64" placeholder="PASSWORD — LEAVE EMPTY FOR OPEN NETWORK" aria-label="Password">` +
+      `</div>` },
+    email: { label:'EMAIL', html:
+      `<input class="f-in" data-k="mto" type="email" spellcheck="false" autocomplete="off" maxlength="80" placeholder="NAME@DOMAIN.COM" aria-label="Email address">` +
+      `<span class="counter" id="counter"></span>` }
+  };
+
+  const DEFAULT_F = { link:'', ssid:'', pass:'', mto:'' };
 
   const state = {
-    text: '',
+    type: 'link',
+    f: Object.assign({}, DEFAULT_F),
     mark: '',
     glyph: 'fluid',
     eye: 'round',
@@ -13,14 +37,52 @@
     pressCount: 1
   };
 
-  /* ---------- QR engine ---------- */
+  /* ================= persistence ================= */
+  function save(){
+    try{
+      localStorage.setItem(KEY, JSON.stringify({
+        type: state.type, f: state.f, mark: state.mark, glyph: state.glyph,
+        eye: state.eye, ink: state.ink, bg: state.bg, pressCount: state.pressCount
+      }));
+    }catch(e){}
+  }
+  function loadSaved(){
+    try{ return JSON.parse(localStorage.getItem(KEY)); }catch(e){ return null; }
+  }
+
+  /* ================= payload builder ================= */
+  function buildPayload(){
+    const f = state.f;
+    switch(state.type){
+      case 'wifi': {
+        if(!f.ssid.trim()) return '';
+        const esc = s => s.replace(/([\\;,:"])/g, '\\$1');
+        // WPA covers WPA/WPA2/WPA3 on all modern scanners; empty password = open network
+        let p = 'WIFI:T:' + (f.pass ? 'WPA' : 'nopass') + ';S:' + esc(f.ssid.trim()) + ';';
+        if(f.pass) p += 'P:' + esc(f.pass) + ';';
+        return p + ';';
+      }
+      case 'email': {
+        const to = f.mto.trim();
+        return to ? 'mailto:' + to : '';
+      }
+      default:
+        return f.link.trim();
+    }
+  }
+
+  /* ================= QR builder ================= */
   function buildQR(text, animate){
     const qr = qrcode(0, 'H');
     qr.addData(text);
     qr.make();
+
     const n = qr.getModuleCount();
     const m = [];
-    for(let r = 0; r < n; r++){ m.push(new Array(n)); for(let c = 0; c < n; c++) m[r][c] = qr.isDark(r, c); }
+    for(let r = 0; r < n; r++){
+      m.push(new Array(n));
+      for(let c = 0; c < n; c++) m[r][c] = qr.isDark(r, c);
+    }
 
     const q = 4, N = n + 2 * q, ver = (n - 17) / 4;
     const cls = d => animate ? ` class="mod" style="--d:${d}ms"` : '';
@@ -33,7 +95,7 @@
     const rm = hasMark ? Math.min(Math.max(2.3, n*0.135), n*0.155) : 0;
     const knocked = (r,c) => hasMark && ((r+.5-n/2)**2 + (c+.5-n/2)**2) <= (rm+0.4)**2;
 
-    // rounded-rect path helper, corners = [tl, tr, br, bl]
+    // rounded-rect path, corners = [tl, tr, br, bl]
     function rr(x,y,w,h,r){
       const lim = Math.min(w,h)/2;
       const [a,b,c,d] = r.map(v => Math.max(0, Math.min(v, lim)));
@@ -71,7 +133,7 @@
       }
     }
 
-    // finder "eyes": light underlay + custom ring + pupil
+    // finder eyes: light underlay + ring + pupil
     [[0,0],[n-7,0],[0,n-7]].forEach(([oc, orw]) => {
       const x = q+oc, y = q+orw, cx = x+3.5, cy = y+3.5;
       if(state.bg !== 'none'){
@@ -102,30 +164,84 @@
     return { N, n, ver, under, mods, eyes, seal };
   }
 
+  /* ================= render ================= */
+  function updateCounter(payload){
+    const c = $('#counter');
+    if(!c) return;
+    if(state.type === 'link'){
+      c.textContent = `${state.f.link.length} / 300`;
+      c.classList.remove('over');
+    } else {
+      const bytes = new TextEncoder().encode(payload).length;
+      c.textContent = `PAYLOAD · ${bytes} BYTES`;
+      c.classList.toggle('over', bytes > 900);
+    }
+  }
+
   function renderQR(animate = true){
+    save();
     const poster = $('#poster');
-    const text = state.text.trim();
-    if(!text){ poster.classList.add('empty'); $('#specs').style.visibility = 'hidden'; return; }
+    const payload = buildPayload();
+    updateCounter(payload);
+    if(!payload){ poster.classList.add('empty'); $('#specs').style.visibility = 'hidden'; return; }
     poster.classList.remove('empty'); $('#specs').style.visibility = '';
+
     let qr;
-    try { qr = buildQR(text, animate); }
-    catch(e){ toast('TOO HEAVY FOR THE PRESS — SHORTEN THE TEXT'); return; }
+    try { qr = buildQR(payload, animate); }
+    catch(e){ toast('TOO HEAVY FOR THE PRESS — SHORTEN IT'); return; }
+
     const svg = $('#qr');
     svg.setAttribute('viewBox', `0 0 ${qr.N} ${qr.N}`);
     svg.classList.remove('in');
     svg.innerHTML = qr.under + qr.mods + qr.eyes + qr.seal;
-    if(animate){
-      requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.add('in')));
-    }
+    if(animate) requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.add('in')));
+
     $('#specs').innerHTML = `VER ${String(qr.ver).padStart(2,'0')} — ${qr.n}×${qr.n} MODULES<br>EC LEVEL H · 30% RECOVERY<br>STATUS&ensp;<span class="dot"></span>READY`;
   }
 
-  /* ---------- export ---------- */
-  function exportSVGString(){
-    const qr = buildQR(state.text.trim(), false);
+  /* ================= export ================= */
+  // square card: white frame + hard offset shadow, transparent margin, no text
+  const GEO = (() => {
+    const M = 90, PAD = 110, CARD = 1600;
+    const QRS = CARD - PAD * 2;
+    return { M, CARD, QRS, W: CARD + M * 2, H: CARD + M * 2, fx: M + PAD, fy: M + PAD };
+  })();
+
+  function qrSVGString(){
+    const qr = buildQR(buildPayload(), false);
     const bg = state.bg === 'none' ? '' : `<rect width="${qr.N}" height="${qr.N}" fill="${state.bg}"/>`;
     return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${qr.N} ${qr.N}" width="1024" height="1024" shape-rendering="geometricPrecision">${bg}${qr.under}${qr.mods}${qr.eyes}${qr.seal}</svg>`;
   }
+
+  function cardSVGString(){
+    const qr = buildQR(buildPayload(), false);
+    const g = GEO, LINE = 'rgba(23,20,15,.38)';
+    const bgRect = state.bg === 'none' ? '' : `<rect x="${g.fx}" y="${g.fy}" width="${g.QRS}" height="${g.QRS}" fill="${state.bg}"/>`;
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${g.W} ${g.H}" width="${g.W}" height="${g.H}">
+<rect x="${g.M + 30}" y="${g.M + 34}" width="${g.CARD}" height="${g.CARD}" fill="rgba(23,20,15,.16)"/>
+<rect x="${g.M}" y="${g.M}" width="${g.CARD}" height="${g.CARD}" fill="#FFFFFF" stroke="${LINE}" stroke-width="2"/>
+<rect x="${g.fx}" y="${g.fy}" width="${g.QRS}" height="${g.QRS}" fill="none" stroke="${LINE}" stroke-width="2"/>
+ ${bgRect}
+<g transform="translate(${g.fx} ${g.fy}) scale(${g.QRS / qr.N})">${qr.under}${qr.mods}${qr.eyes}${qr.seal}</g>
+</svg>`;
+  }
+
+  function drawCard(ctx, qrCanvas){
+    const g = GEO;
+    ctx.clearRect(0, 0, g.W, g.H);
+    ctx.fillStyle = 'rgba(23,20,15,.16)';
+    ctx.fillRect(g.M + 30, g.M + 34, g.CARD, g.CARD);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(g.M, g.M, g.CARD, g.CARD);
+    ctx.strokeStyle = 'rgba(23,20,15,.38)'; ctx.lineWidth = 2;
+    ctx.strokeRect(g.M + 1, g.M + 1, g.CARD - 2, g.CARD - 2);
+    if(state.bg !== 'none'){ ctx.fillStyle = state.bg; ctx.fillRect(g.fx, g.fy, g.QRS, g.QRS); }
+    ctx.strokeStyle = 'rgba(23,20,15,.38)'; ctx.lineWidth = 2;
+    ctx.strokeRect(g.fx, g.fy, g.QRS, g.QRS);
+    ctx.drawImage(qrCanvas, g.fx, g.fy, g.QRS, g.QRS);
+  }
+
   function saveBlob(blob, name){
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -133,57 +249,65 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
+
   function pressAnim(){
     const c = $('#card');
     c.classList.add('pressed');
     setTimeout(() => c.classList.remove('pressed'), 280);
   }
+
   function bumpPressNo(){
     state.pressCount++;
-    $('#pressNo').textContent = 'PRESS N°' + String(state.pressCount).padStart(3,'0');
+    $('#pressNo').textContent = 'PRESS N°' + pad3(state.pressCount);
+    save();
   }
 
   $('#dlPng').addEventListener('click', () => {
-    if(!state.text.trim()){ toast('NOTHING TO PRESS — ADD CONTENT FIRST'); return; }
+    if(!buildPayload()){ toast('NOTHING TO PRESS — ADD CONTENT FIRST'); return; }
     pressAnim();
-    const name = `hanko-stamp-${String(state.pressCount).padStart(3,'0')}.png`;
+    const name = `hanko-card-${pad3(state.pressCount)}.png`;
     bumpPressNo();
-    const url = URL.createObjectURL(new Blob([exportSVGString()], {type:'image/svg+xml;charset=utf-8'}));
+    const url = URL.createObjectURL(new Blob([qrSVGString()], {type:'image/svg+xml;charset=utf-8'}));
     const img = new Image();
     img.onload = () => {
-      const S = 1600, cv = document.createElement('canvas');
-      cv.width = S; cv.height = S;
-      cv.getContext('2d').drawImage(img, 0, 0, S, S);
+      const qc = document.createElement('canvas');
+      qc.width = qc.height = 2944;
+      qc.getContext('2d').drawImage(img, 0, 0, 2944, 2944);
       URL.revokeObjectURL(url);
-      cv.toBlob(b => {
-        saveBlob(b, name);
-        toast((state.bg === 'none' ? 'PRESSED ON CLEAR — SCAN NEEDS A LIGHT SURFACE · ' : 'STAMP PRESSED · ') + name.toUpperCase());
-      }, 'image/png');
+      const cv = document.createElement('canvas');
+      cv.width = GEO.W; cv.height = GEO.H;
+      drawCard(cv.getContext('2d'), qc);
+      cv.toBlob(b => { saveBlob(b, name); toast('CARD PRESSED · ' + name.toUpperCase()); }, 'image/png');
     };
     img.onerror = () => toast('PRESS JAMMED — TRY THE SVG EXPORT');
     img.src = url;
   });
 
   $('#dlSvg').addEventListener('click', () => {
-    if(!state.text.trim()){ toast('NOTHING TO PRESS — ADD CONTENT FIRST'); return; }
+    if(!buildPayload()){ toast('NOTHING TO PRESS — ADD CONTENT FIRST'); return; }
     pressAnim();
-    const name = `hanko-stamp-${String(state.pressCount).padStart(3,'0')}.svg`;
+    const name = `hanko-card-${pad3(state.pressCount)}.svg`;
     bumpPressNo();
-    saveBlob(new Blob([exportSVGString()], {type:'image/svg+xml;charset=utf-8'}), name);
-    toast('STAMP PRESSED · ' + name.toUpperCase());
+    saveBlob(new Blob([cardSVGString()], {type:'image/svg+xml;charset=utf-8'}), name);
+    toast('CARD PRESSED · ' + name.toUpperCase());
   });
 
-  /* ---------- controls ---------- */
+  /* ================= swatches ================= */
   const INKS = [['SUMI · 墨','#17140F'],['SHU · 朱','#E2472C'],['AI · 藍','#24466B'],['MATCHA · 抹茶','#56743F'],['KURI · 栗','#6B4A3A']];
   const PAPERS = [['WASHI PAPER','#F4EFE6'],['WHITE','#FFFFFF'],['CLEAR','none']];
 
-  function markOn(el){ if(!el) return; el.parentElement.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x === el)); }
+  function markOn(el){
+    if(!el) return;
+    const box = el.closest('.swatches');
+    if(!box) return;
+    box.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x === el));
+  }
 
   function buildSwatches(){
     const box = $('#inks');
     INKS.forEach(([name, hex]) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'sw'; b.title = name;
+      b.type = 'button'; b.className = 'sw'; b.title = name; b.dataset.hex = hex;
       b.style.background = hex;
       b.addEventListener('click', () => { state.ink = hex; markOn(b); renderQR(false); });
       box.appendChild(b);
@@ -198,24 +322,37 @@
       markOn(label); renderQR(false);
     });
     box.appendChild(label);
-    markOn(box.children[0]);
   }
 
   function buildPapers(){
     const box = $('#papers');
     PAPERS.forEach(([name, val]) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'sw'; b.title = name;
+      b.type = 'button'; b.className = 'sw'; b.title = name; b.dataset.hex = val;
       if(val === 'none') b.classList.add('hatch'); else b.style.background = val;
       b.addEventListener('click', () => { state.bg = val; markOn(b); applyPaper(); renderQR(false); });
       box.appendChild(b);
     });
-    markOn(box.children[0]);
-  }
-  function applyPaper(){
-    $('#frame').style.setProperty('--cardbg', state.bg === 'none' ? 'transparent' : state.bg);
   }
 
+  function applyPaper(){
+    const clear = state.bg === 'none';
+    $('#frame').style.setProperty('--cardbg', clear ? 'transparent' : state.bg);
+    $('#frame').classList.toggle('is-clear', clear);
+  }
+
+  // highlight the saved ink & paper swatches (custom ink included)
+  function applyColors(){
+    let inkSw = $('#inks').querySelector(`[data-hex="${state.ink}"]`);
+    if(!inkSw){
+      inkSw = $('#inks .sw-custom');
+      inkSw.style.background = state.ink;
+    }
+    markOn(inkSw);
+    markOn($('#papers').querySelector(`[data-hex="${state.bg}"]`));
+  }
+
+  /* ================= segments ================= */
   function segInit(id, key){
     const el = $(id);
     el.addEventListener('click', e => {
@@ -226,24 +363,60 @@
     });
   }
 
-  /* ---------- inputs ---------- */
-  const contentEl = $('#content');
-  let debT, debM;
-  contentEl.addEventListener('input', () => {
-    $('#counter').textContent = `${contentEl.value.length} / 300`;
-    clearTimeout(debT);
-    debT = setTimeout(() => { state.text = contentEl.value; renderQR(true); }, 280);
+  /* ================= dynamic fields ================= */
+  const fieldsEl = $('#fields');
+  let debG;
+
+  function queueGenerate(){
+    clearTimeout(debG);
+    debG = setTimeout(() => renderQR(true), 280);
+  }
+  function flushGenerate(){
+    clearTimeout(debG);
+    renderQR(true);
+  }
+
+  function buildFields(){
+    const def = FIELD_DEFS[state.type];
+    $('#contentLabel').textContent = '02 / ' + def.label;
+    fieldsEl.innerHTML = def.html;
+    fieldsEl.querySelectorAll('.f-in').forEach(inp => { inp.value = state.f[inp.dataset.k] || ''; });
+  }
+
+  function setType(t, animate = true){
+    state.type = t;
+    $('#segType').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === t));
+    buildFields();
+    renderQR(animate);
+  }
+
+  fieldsEl.addEventListener('input', e => {
+    const el = e.target;
+    const k = el.dataset.k;
+    if(!k) return;
+    state.f[k] = el.value;
+    queueGenerate();
   });
-  $('#mark').addEventListener('input', e => {
-    state.mark = e.target.value;
-    clearTimeout(debM);
-    debM = setTimeout(() => renderQR(true), 220);
+  fieldsEl.addEventListener('keydown', e => {
+    if(e.key === 'Enter') flushGenerate();
   });
 
-  /* ---------- re-press on click ---------- */
+  /* ================= seal mark ================= */
+  $('#mark').addEventListener('input', e => {
+    state.mark = e.target.value;
+    queueGenerate();
+  });
+
+  /* ================= type selector ================= */
+  $('#segType').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if(b) setType(b.dataset.v);
+  });
+
+  /* ================= re-press on click ================= */
   const card = $('#card');
   function repress(){
-    if(!state.text.trim()) return;
+    if(!buildPayload()) return;
     pressAnim(); renderQR(true);
   }
   card.addEventListener('click', repress);
@@ -251,7 +424,23 @@
     if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); repress(); }
   });
 
-  /* ---------- tilt ---------- */
+  /* ================= reset ================= */
+  $('#reset').addEventListener('click', () => {
+    try{ localStorage.removeItem(KEY); }catch(e){}
+    state.type = 'link';
+    state.f = Object.assign({}, DEFAULT_F);
+    state.mark = ''; state.glyph = 'fluid'; state.eye = 'round';
+    state.ink = INKS[0][1]; state.bg = PAPERS[0][1];
+    $('#mark').value = '';
+    [['#segGlyph','fluid'],['#segEye','round']].forEach(([id, val]) => {
+      $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === val));
+    });
+    applyColors(); applyPaper();
+    setType('link');
+    toast('FRESH SHEET — ATELIER CLEARED');
+  });
+
+  /* ================= card tilt ================= */
   (function tilt(){
     if(!matchMedia('(pointer:fine)').matches) return;
     const poster = $('#poster'), tiltEl = $('#tilt');
@@ -269,7 +458,7 @@
     })();
   })();
 
-  /* ---------- toast ---------- */
+  /* ================= toast ================= */
   let toastTimer;
   function toast(msg){
     const t = $('#toast');
@@ -279,7 +468,7 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
   }
 
-  /* ---------- chrome: clock, date, marquee ---------- */
+  /* ================= chrome ================= */
   function tick(){
     $('#clock').textContent = new Date().toLocaleTimeString('en-GB', {timeZone:'Asia/Tokyo', hour12:false});
   }
@@ -289,7 +478,7 @@
   const half = items.map(t => `<span>${t}<i></i></span>`).join('');
   $('#track').innerHTML = half + half;
 
-  /* ---------- init ---------- */
+  /* ================= init ================= */
   if(typeof qrcode === 'undefined'){
     $('#emptyState').textContent = 'QR ENGINE OFFLINE';
     toast('QR ENGINE FAILED TO LOAD — CHECK YOUR CONNECTION');
@@ -297,13 +486,33 @@
   }
   try { qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8']; } catch(e){}
 
+  // restore saved session
+  const saved = loadSaved();
+  if(saved){
+    if(TYPES.includes(saved.type)) state.type = saved.type;
+    if(saved.f && typeof saved.f === 'object') Object.assign(state.f, DEFAULT_F, saved.f);
+    if(['fluid','dot','square'].includes(saved.glyph)) state.glyph = saved.glyph;
+    if(['sharp','round','circle'].includes(saved.eye)) state.eye = saved.eye;
+    if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(saved.ink || '')) state.ink = saved.ink;
+    if(saved.bg === 'none' || /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(saved.bg || '')) state.bg = saved.bg;
+    if(typeof saved.mark === 'string') state.mark = saved.mark;
+    if(Number.isInteger(saved.pressCount) && saved.pressCount > 0) state.pressCount = saved.pressCount;
+  }
+
   buildSwatches();
   buildPapers();
+  applyColors();
   applyPaper();
   segInit('#segGlyph', 'glyph');
   segInit('#segEye', 'eye');
-  contentEl.value = state.text;
-  $('#counter').textContent = `${state.text.length} / 300`;
+  $('#mark').value = state.mark;
+  $('#pressNo').textContent = 'PRESS N°' + pad3(state.pressCount);
+  [['#segGlyph', state.glyph], ['#segEye', state.eye]].forEach(([id, val]) => {
+    $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === val));
+  });
+
+  setType(state.type);
   tick(); setInterval(tick, 1000);
-  renderQR(true);
+
+  if(buildPayload()) toast('WELCOME BACK — YOUR STAMP WAS RESTORED');
 })();
